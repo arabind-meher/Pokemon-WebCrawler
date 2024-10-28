@@ -1,0 +1,9 @@
+.env/
+.vscode/
+pokemon_scraper/__pycache__/
+pokemon_scraper/database/__pycache__/
+pokemon_scraper/spiders/__pycache__/
+pokemon_scraper/spiders/bulbasaur_spider.py
+pokemon_scraper/spiders/charizard_spider.py
+pokemon_scraper/spiders/charmander_spider.py
+logs/
