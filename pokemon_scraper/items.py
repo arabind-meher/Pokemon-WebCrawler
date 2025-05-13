@@ -1,12 +1,16 @@
-# Define here the models for your scraped items
-#
-# See documentation in:
-# https://docs.scrapy.org/en/latest/topics/items.html
-
 import scrapy
 
 
-class PokemonScraperItem(scrapy.Item):
-    # define the fields for your item here like:
-    # name = scrapy.Field()
-    pass
+class PokemonItem(scrapy.Item):
+    name = scrapy.Field()
+    form = scrapy.Field()
+    index = scrapy.Field()
+    types = scrapy.Field()
+    species = scrapy.Field()
+    height = scrapy.Field()
+    weight = scrapy.Field()
+    abilities = scrapy.Field()
+    local_index = scrapy.Field()
+    training = scrapy.Field()
+    breeding = scrapy.Field()
+    base_stats = scrapy.Field()

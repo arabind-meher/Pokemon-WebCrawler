@@ -5,8 +5,7 @@ import scrapy
 from scrapy.http import Response
 from bs4 import BeautifulSoup
 
-from pokemon_scraper.database.connection import connect_to_mongodb
-
+from pokemon_scraper.items import PokemonItem
 
 warnings.filterwarnings("ignore")
 
@@ -16,59 +15,42 @@ class PokemonSpider(scrapy.Spider):
     allowed_domains = ["pokemondb.net"]
     start_urls = ["https://pokemondb.net/pokedex/bulbasaur"]
 
-    def __init__(self):
-        self.client = connect_to_mongodb()
-        self.db = self.client["pokemon_db"]
-        self.collection = self.db["pokedex"]
-
     def parse(self, response: Response) -> Any:
+        # Extract base Pokémon name
         pokemon_data = dict()
-
-        # Name
         pokemon_data["name"] = response.xpath("//h1/text()").get()
 
-        # Forms
+        # Extract all available forms for the Pokémon
         forms = response.xpath("/html/body/main/div[2]/div[1]/a/text()").getall()
 
         for iterator, form in enumerate(forms, 1):
+            # Initialize item for storing structured Pokémon data
+            pokemon_item = PokemonItem()
             XPATH = self.get_xpaths(iterator)
 
+            # Generate label for each form (e.g., "Bulbasaur (Mega)", "Bulbasaur")
             key_words = ["Mega", "Alolan", "Galarian", "Hisuian"]
             if pokemon_data["name"] == form or any(map(lambda x: x in form, key_words)):
                 key = form
             else:
                 key = f'{pokemon_data["name"]} ({form})'
 
-            # National Index
-            pokemon_data["index"] = int(response.xpath(XPATH["index"]).get().strip())
-
-            # Pokemon Form
-            if pokemon_data["name"] == form:
-                pokemon_data["form"] = None
-            else:
-                pokemon_data["form"] = form
-
-            # Pokemon Types
-            pokemon_data["types"] = list(
+            # Assign basic details
+            pokemon_item["name"] = pokemon_data["name"]
+            pokemon_item["form"] = None if pokemon_data["name"] == form else form
+            pokemon_item["index"] = int(response.xpath(XPATH["index"]).get().strip())
+            pokemon_item["types"] = list(
                 map(lambda x: x.strip(), response.xpath(XPATH["types"]).getall())
             )
-
-            # Pokemon Species
-            pokemon_data["species"] = response.xpath(XPATH["species"]).get().strip()
-
-            # Pokemon Height
-            pokemon_data["height"] = response.xpath(XPATH["height"]).get().strip()
-
-            # Pokemon Weight
-            pokemon_data["weight"] = response.xpath(XPATH["weight"]).get().strip()
-
-            # Pokemon Abilities
-            pokemon_data["abilities"] = list(
+            pokemon_item["species"] = response.xpath(XPATH["species"]).get().strip()
+            pokemon_item["height"] = response.xpath(XPATH["height"]).get().strip()
+            pokemon_item["weight"] = response.xpath(XPATH["weight"]).get().strip()
+            pokemon_item["abilities"] = list(
                 map(lambda x: x.strip(), response.xpath(XPATH["abilities"]).getall())
             )
 
-            # Local Podex Index
-            pokemon_data["local_index"] = dict(
+            # Extract localized Pokédex numbers for different regions
+            pokemon_item["local_index"] = dict(
                 zip(
                     self.beautiful_soup_parse(
                         response.xpath(XPATH["regions"]).getall()
@@ -82,8 +64,8 @@ class PokemonSpider(scrapy.Spider):
                 )
             )
 
-            # Pokemon Training
-            pokemon_data["training"] = dict(
+            # Extract training data (EV yield, base EXP, etc.)
+            pokemon_item["training"] = dict(
                 zip(
                     self.beautiful_soup_parse(
                         response.xpath(XPATH["training_keys"]).getall()
@@ -94,8 +76,8 @@ class PokemonSpider(scrapy.Spider):
                 )
             )
 
-            # Pokemon Breeding
-            pokemon_data["breeding"] = dict(
+            # Extract breeding data (gender ratio, egg group, cycles)
+            pokemon_item["breeding"] = dict(
                 zip(
                     self.beautiful_soup_parse(
                         response.xpath(XPATH["breeding_keys"]).getall()
@@ -106,8 +88,8 @@ class PokemonSpider(scrapy.Spider):
                 )
             )
 
-            # Pokemon Stats
-            pokemon_data["base_stats"] = dict(
+            # Extract base stats (HP, Attack, etc.)
+            pokemon_item["base_stats"] = dict(
                 zip(
                     self.beautiful_soup_parse(
                         response.xpath(XPATH["base_stats_keys"]).getall()
@@ -120,21 +102,16 @@ class PokemonSpider(scrapy.Spider):
                     ),
                 )
             )
-
-            pokemon_data["base_stats"]["Total"] = sum(
-                pokemon_data["base_stats"].values()
+            # Compute total base stats
+            pokemon_item["base_stats"]["Total"] = sum(
+                pokemon_item["base_stats"].values()
             )
 
-            if self.upload_to_db({key: pokemon_data}):
-                if pokemon_data.get("form"):
-                    log_text = f"{'%04d' % pokemon_data['index']}: {'%15s' % pokemon_data['name']} = {pokemon_data['form']}"
-                else:
-                    log_text = f"{'%04d' % pokemon_data['index']}: {'%15s' % pokemon_data['name']} = {pokemon_data['name']}"
+            # Yield the populated item to pipelines
+            self.log(f"✅ Yielding item: {key}")
+            yield pokemon_item
 
-                print(log_text)
-
-                self.log("Successfully uploaded to db..........")
-
+        # Follow pagination to next Pokémon entry if available
         next_page = response.xpath(
             '//a[contains(@class, "entity-nav-next")]/@href'
         ).get()
@@ -146,15 +123,6 @@ class PokemonSpider(scrapy.Spider):
         return map(
             lambda x: BeautifulSoup(x, "html.parser").get_text().strip(), element
         )
-
-    def upload_to_db(self, pokedex_entry: dict) -> bool:
-        try:
-            self.collection.insert_one(pokedex_entry)
-        except Exception as e:
-            print(f"Connection Error {e}")
-            return False
-
-        return True
 
     @staticmethod
     def get_xpaths(itr: int) -> dict:
@@ -178,7 +146,6 @@ class PokemonSpider(scrapy.Spider):
         xpaths["abilities"] = (
             f"/html/body/main/div[2]/div[2]/div[{itr}]/div[1]/div[2]/table/tbody/tr[6]/td//a/text()"
         )
-
         xpaths["local_index"] = (
             f"/html/body/main/div[2]/div[2]/div[{itr}]/div[1]/div[2]/table/tbody/tr[7]/td/text()"
         )
